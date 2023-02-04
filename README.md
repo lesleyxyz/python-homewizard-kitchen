@@ -8,6 +8,6 @@ pip install homewizard-kitchen
 ```
 
 ## Usage
-See [example.py](example.py)
+See [example.py](https://github.com/lesleyxyz/python-homewizard-kitchen/blob/main/example.py)
 
 Afterwards you can use the Kettle model to update & retrieve data.
