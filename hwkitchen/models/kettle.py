@@ -34,6 +34,7 @@ class Kettle:
         }})
 
     def set_target_temperature(self, target_temperature: int):
+        # should be between 40 and 100 in steps of 5
         self._deep_update({"state": {
             "target_temperature": target_temperature
         }})
@@ -59,8 +60,26 @@ class Kettle:
     def get_id(self) -> str:
         return self.device.get("device")
 
-    def set_name(self, name: str) -> str:
+    def set_name(self, name: str):
         self._deep_update({"name": name})
 
     def get_name(self) -> str:
         return self.device.get("name")
+
+    def get_boil_before_target(self) -> bool:
+        return self.device.get("state", {}).get("boil_before_target", False)
+
+    def set_boil_before_target(self, bbt: bool):
+        self.device.setdefault("state", {})["boil_before_target"] = bbt
+
+    def get_keep_warm_enabled(self) -> bool:
+        return self.device.get("state", {}).get("keep_warm_enabled", False)
+
+    def set_keep_warm_enabled(self, kw: bool):
+        self.device.setdefault("state", {})["keep_warm_enabled"] = kw
+
+    def get_keep_warm_set_time(self) -> int:
+        return self.device.get("state", {}).get("keep_warm_set_time", False)
+
+    def set_keep_warm_set_time(self, kw_time: int):
+        self.device.setdefault("state", {})["keep_warm_set_time"] = kw_time
