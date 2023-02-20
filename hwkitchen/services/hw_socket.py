@@ -60,6 +60,7 @@ class HWSocket:
 
         if device_id in self.device_update_callbacks:
             fn = self.device_update_callbacks[device_id]
+
             if inspect.iscoroutinefunction(fn):
                 await self.device_update_callbacks[device_id](device)
             else:
@@ -117,7 +118,10 @@ class HWSocket:
             "compatibility": 2
         })
 
-        await callback()
+        if inspect.iscoroutinefunction(callback):
+            await callback()
+        else:
+            callback()
 
     async def _receive_messages(self):
         """
