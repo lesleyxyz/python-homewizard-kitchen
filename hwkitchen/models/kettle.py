@@ -43,7 +43,7 @@ class Kettle:
         return self.device.get("state", {}).get("target_temperature")
 
     def get_current_temperature(self) -> int:
-        return self.device.get("state", {}).get("current_tempereature")
+        return self.device.get("state", {}).get("current_temperature")
 
     def get_status(self) -> KettleStatus:
         return KettleStatus(self.device.get("state", {}).get("status"))
