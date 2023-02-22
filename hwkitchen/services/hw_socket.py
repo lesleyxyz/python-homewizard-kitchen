@@ -1,4 +1,4 @@
-from typing import Optional, Callable, Awaitable
+from typing import Union, Callable, Awaitable
 from jsonpatch import JsonPatch
 import websockets
 import asyncio
@@ -104,9 +104,22 @@ class HWSocket:
             self._receive_messages()
         )
 
-    async def _connect(self, callback: Callable[[], Awaitable[None]]):
+    async def reconnect(self):
+        print("Reconnecting")
+        future = asyncio.get_event_loop().create_future()
+        callback = lambda: (future.set_result(True))
+        await self._connect(callback)
+        await asyncio.wait_for(future, timeout=60)
+
+        for device_id, callback in self.device_update_callbacks.copy().items():
+            await self.subscribe_device(device_id, callback)
+
+    async def _connect(self, callback: Callable[[], Union[Awaitable[None], None]]):
         """Initiate connection"""
+        self.devices = {}
         self.message_id = 1
+        self.message_id_futures = {}
+        self.device_update_callbacks = {}
         self.ws = await websockets.connect("wss://app-ws.homewizard.com/ws")
 
         await self.send("hello", {
@@ -135,7 +148,7 @@ class HWSocket:
                 message = await self.ws.recv()
                 asyncio.get_event_loop().create_task(self._on_message(message))
             except websockets.exceptions.ConnectionClosed:
-                print('Connection with server closed')
+                await self.reconnect()
                 break
 
     async def send(self, msg_type: str, payload: dict):
@@ -145,15 +158,19 @@ class HWSocket:
         future = asyncio.get_event_loop().create_future()
         self.message_id_futures[message_id] = future.set_result
 
-        await self.ws.send(json.dumps({
-            "device": None,
-            "model": None,
-            "online": None,
-            "state": None,
-            **payload,
-            "type": msg_type,
-            "message_id": message_id
-        }))
+        try:
+            await self.ws.send(json.dumps({
+                "device": None,
+                "model": None,
+                "online": None,
+                "state": None,
+                **payload,
+                "type": msg_type,
+                "message_id": message_id
+            }))
+        except websockets.ConnectionClosedError:
+            await self.reconnect()
+            return await self.send(msg_type, payload)
 
         return await future
 

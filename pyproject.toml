@@ -1,6 +1,6 @@
 [project]
 name = "homewizard-kitchen"
-version = "0.1.4"
+version = "0.1.5"
 authors = [
     { name="Lesley De Keyser", email="me@lesley.co" },
 ]
@@ -8,6 +8,9 @@ description = "Manage your Homewizard Kitchen Kettle using Python"
 readme = "README.md"
 requires-python = ">=3.7"
 classifiers = []
+dependencies = [
+    "websockets==10.4"
+]
 
 [project.urls]
 "Homepage" = "https://github.com/lesleyxyz/python-homewizard-kitchen"
