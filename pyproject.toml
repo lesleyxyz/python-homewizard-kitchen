@@ -1,6 +1,6 @@
 [project]
 name = "homewizard-kitchen"
-version = "0.1.5"
+version = "0.2.1"
 authors = [
     { name="Lesley De Keyser", email="me@lesley.co" },
 ]
@@ -9,7 +9,8 @@ readme = "README.md"
 requires-python = ">=3.7"
 classifiers = []
 dependencies = [
-    "websockets==10.4"
+    "websockets==10.4",
+    "httpx==0.23.3",
 ]
 
 [project.urls]

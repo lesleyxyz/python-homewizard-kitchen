@@ -1,21 +1,56 @@
-from typing import Union, Callable, Awaitable
+from typing import Union, Callable, Awaitable, Optional
 from jsonpatch import JsonPatch
+import urllib.parse
+import requests
+import hashlib
+import base64
 import websockets
 import asyncio
 import inspect
+import logging
 import json
+import httpx
 
 from ..models import Kettle
+_LOGGER = logging.getLogger(__name__)
 
 
 class HWSocket:
-    def __init__(self, token: str):
-        self.token = token
+    def __init__(self, username: str, password: str):
+        self.username = username
+        self.password = password
+        self.endpoint = "https://api.homewizardeasyonline.com/v1/"
+
         self.devices = {}
         self.message_id = 1
         self.message_id_futures = {}
         self.device_update_callbacks = {}
         self.ws = None
+
+    async def _auth_get(self, resource: str) -> dict:
+        url = urllib.parse.urljoin(self.endpoint, resource)
+        encoded_pass = self.password.encode('utf-8')
+        sha1_pass = hashlib.sha1(encoded_pass).hexdigest()
+
+        encoded_token = f"{self.username}:{sha1_pass}".encode("utf-8")
+        base64_token = base64.b64encode(encoded_token).decode("utf-8")
+
+        async with httpx.AsyncClient() as client:
+            result = await client.get(url, headers={
+                "Authorization": f"Basic {str(base64_token)}"
+            })
+
+        return result.json()
+
+    async def get_token(self) -> str:
+        result = await self._auth_get("auth/login")
+        return result.get("token")
+
+    async def get_account(self):
+        return await self._auth_get("account")
+
+    async def get_devices(self):
+        return await self._auth_get("auth/devices")
 
     def _get_device(self, device_id: str) -> Kettle:
         device_dict = self.devices[device_id]
@@ -27,7 +62,7 @@ class HWSocket:
     async def _on_response_msg(self, msg: dict):
         message_id = msg.get("message_id")
         if message_id not in self.message_id_futures.keys():
-            print(f"message_id {message_id} not found", msg)
+            _LOGGER.error(f"message_id {message_id} not found", msg)
             return
 
         self.message_id_futures[message_id](msg)
@@ -61,13 +96,15 @@ class HWSocket:
         if device_id in self.device_update_callbacks:
             fn = self.device_update_callbacks[device_id]
 
+            if not fn:
+                return
             if inspect.iscoroutinefunction(fn):
                 await self.device_update_callbacks[device_id](device)
             else:
                 fn(device)
 
-    async def subscribe_device(self, device_id: str, callback: Callable[[Kettle], Awaitable[None]]):
-        self.device_update_callbacks[device_id] = callback
+    async def subscribe_device(self, device_id: str, callback: Optional[Callable[[Kettle], Union[Awaitable[None], None]]]):
+        _LOGGER.debug(f"Subscribing to device {device_id}")
 
         future = asyncio.get_event_loop().create_future()
         self.device_update_callbacks[device_id] = future.set_result
@@ -78,11 +115,18 @@ class HWSocket:
 
         kettle = await future
         self.device_update_callbacks[device_id] = callback
-        await callback(kettle)
+
+        if not callback:
+            return
+        if inspect.iscoroutinefunction(callback):
+            await self.device_update_callbacks[device_id](kettle)
+        else:
+            callback(kettle)
 
         return kettle
 
     async def _on_message(self, message: str):
+        _LOGGER.debug(f"_on_message(message={repr(message)})")
         msg = json.loads(message)
         msg_type_handlers = {
             "response": self._on_response_msg,
@@ -93,45 +137,48 @@ class HWSocket:
 
         msg_type = msg.get("type")
         if msg_type not in msg_type_handlers.keys():
-            print(f"Message type {msg_type} not found", msg)
+            _LOGGER.error(f"Message type {msg_type} not found", msg)
             return
 
         await msg_type_handlers[msg_type](msg)
 
-    async def connect(self, callback: Callable[[], Awaitable[None]]):
+    async def connect(self, callback: Optional[Callable[[], Union[Awaitable[None], None]]]):
         await asyncio.gather(
             self._connect(callback),
             self._receive_messages()
         )
 
     async def reconnect(self):
-        print("Reconnecting")
+        _LOGGER.debug("Reconnecting")
         future = asyncio.get_event_loop().create_future()
         callback = lambda: (future.set_result(True))
+
         await self._connect(callback)
         await asyncio.wait_for(future, timeout=60)
 
         for device_id, callback in self.device_update_callbacks.copy().items():
             await self.subscribe_device(device_id, callback)
 
-    async def _connect(self, callback: Callable[[], Union[Awaitable[None], None]]):
+    async def _connect(self, callback: Optional[Callable[[], Union[Awaitable[None], None]]]):
         """Initiate connection"""
-        self.devices = {}
+        _LOGGER.debug("Connecting")
         self.message_id = 1
         self.message_id_futures = {}
-        self.device_update_callbacks = {}
         self.ws = await websockets.connect("wss://app-ws.homewizard.com/ws")
+        _LOGGER.debug("Connected")
 
         await self.send("hello", {
             "type": "hello",
             "os": "android",
             "source": "kitchen",
             "version": "1.4.4",
-            "token": self.token,
+            "token": await self.get_token(),
             "compatibility": 2
         })
 
-        if inspect.iscoroutinefunction(callback):
+        if not callback:
+            return
+        elif inspect.iscoroutinefunction(callback):
             await callback()
         else:
             callback()
@@ -148,8 +195,9 @@ class HWSocket:
                 message = await self.ws.recv()
                 asyncio.get_event_loop().create_task(self._on_message(message))
             except websockets.exceptions.ConnectionClosed:
-                await self.reconnect()
-                break
+                _LOGGER.error("_receive_messages(): Connection lost")
+                self.ws = None
+                asyncio.create_task(self.reconnect())
 
     async def send(self, msg_type: str, payload: dict):
         message_id = self.message_id
@@ -159,7 +207,7 @@ class HWSocket:
         self.message_id_futures[message_id] = future.set_result
 
         try:
-            await self.ws.send(json.dumps({
+            msg = json.dumps({
                 "device": None,
                 "model": None,
                 "online": None,
@@ -167,8 +215,11 @@ class HWSocket:
                 **payload,
                 "type": msg_type,
                 "message_id": message_id
-            }))
+            })
+            _LOGGER.debug(f"send(): {msg}")
+            await self.ws.send(msg)
         except websockets.ConnectionClosedError:
+            _LOGGER.error("send(): Connection lost")
             await self.reconnect()
             return await self.send(msg_type, payload)
 

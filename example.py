@@ -1,10 +1,8 @@
 import asyncio
-from hwkitchen import HWSocket, HWRestClient, Kettle
+from hwkitchen import HWSocket, Kettle
 
 
-rest_client = HWRestClient("<email>", "<password>")
-rest_client.login()
-ws_client = HWSocket(rest_client.token)
+ws_client = HWSocket("<email>", "<password>")
 
 
 async def on_new_status(kettle: Kettle):
@@ -14,7 +12,7 @@ async def on_new_status(kettle: Kettle):
 
 async def on_connection():
     # Get the first device from my HomeWizard Kitchen Account
-    devices = rest_client.get_devices()
+    devices = await ws_client.get_devices()
     kettle_id = devices.get("devices", [])[0].get("identifier")
 
     # Subscribe for new status
