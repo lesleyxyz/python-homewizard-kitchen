@@ -13,7 +13,7 @@ import httpx
 
 from ..models import Kettle
 _LOGGER = logging.getLogger(__name__)
-
+# logging.basicConfig(level=logging.DEBUG)
 
 class HWSocket:
     def __init__(self, username: str, password: str):
@@ -114,6 +114,7 @@ class HWSocket:
         })
 
         kettle = await future
+        _LOGGER.debug(f"Subscribed to device {device_id}")
         self.device_update_callbacks[device_id] = callback
 
         if not callback:
@@ -171,7 +172,7 @@ class HWSocket:
             "type": "hello",
             "os": "android",
             "source": "kitchen",
-            "version": "1.4.4",
+            "version": "1.5.0",
             "token": await self.get_token(),
             "compatibility": 2
         })
