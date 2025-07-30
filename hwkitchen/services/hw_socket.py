@@ -200,46 +200,34 @@ class HWSocket:
             try:
                 message = await self.ws.recv()
                 asyncio.get_event_loop().create_task(self._on_message(message))
-            except websockets.exceptions.ConnectionClosed:
+            except (websockets.exceptions.ConnectionClosed, websockets.ConnectionClosedError):
                 _LOGGER.error("_receive_messages(): Connection lost")
                 self.ws = None
                 asyncio.create_task(self.reconnect())
 
-    async def send(self, msg_type: str, payload: dict):
-        for attempt in range(3):
+    async def send(self, msg_type: str, payload: dict, retries: int = 3):
+        for attempt in range(retries):
             try:
                 if self.ws is None or self.ws.closed:
                     await self.reconnect(False)
-            except (AttributeError,
-                    websockets.exceptions.ConnectionClosed):
+                # build + send in the same try, so AttributeError is caught
+                message_id = self.message_id
+                self.message_id += 1
+                future = asyncio.get_event_loop().create_future()
+                self.message_id_futures[message_id] = future.set_result
+    
+                frame = json.dumps({
+                    "device": None, "model": None, "online": None, "state": None,
+                    **payload,
+                    "type": msg_type,
+                    "message_id": message_id,
+                })
+                await self.ws.send(frame)
+                return await future
+            except (AttributeError, websockets.exceptions.ConnectionClosed, websockets.ConnectionClosedError):
                 if attempt == retries - 1:
                     raise
                 await asyncio.sleep(2 ** attempt)
-    
-        message_id = self.message_id
-        self.message_id += 1
-
-        future = asyncio.get_event_loop().create_future()
-        self.message_id_futures[message_id] = future.set_result
-
-        try:
-            msg = json.dumps({
-                "device": None,
-                "model": None,
-                "online": None,
-                "state": None,
-                **payload,
-                "type": msg_type,
-                "message_id": message_id
-            })
-            _LOGGER.debug(f"send(): {msg}")
-            await self.ws.send(msg)
-        except websockets.ConnectionClosedError:
-            _LOGGER.error("send(): Connection lost")
-            await self.reconnect()
-            return await self.send(msg_type, payload)
-
-        return await future
 
     async def update(self, device: Kettle):
         device_id = device.get_id()
