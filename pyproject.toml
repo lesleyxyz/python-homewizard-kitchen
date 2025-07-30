@@ -1,6 +1,6 @@
 [project]
 name = "homewizard-kitchen"
-version = "0.3.1"
+version = "0.3.2"
 authors = [
     { name="Lesley De Keyser", email="me@lesley.eu" },
 ]
