@@ -26,6 +26,7 @@ class HWSocket:
         self.message_id_futures = {}
         self.device_update_callbacks = {}
         self.ws = None
+        self._reconnect_lock = asyncio.Lock()
 
     async def _auth_get(self, resource: str) -> dict:
         url = urllib.parse.urljoin(self.endpoint, resource)
@@ -149,16 +150,20 @@ class HWSocket:
             self._receive_messages()
         )
 
-    async def reconnect(self):
-        _LOGGER.debug("Reconnecting")
-        future = asyncio.get_event_loop().create_future()
-        callback = lambda: (future.set_result(True))
-
-        await self._connect(callback)
-        await asyncio.wait_for(future, timeout=60)
-
-        for device_id, callback in self.device_update_callbacks.copy().items():
-            await self.subscribe_device(device_id, callback)
+    async def reconnect(self, force=True):
+        _LOGGER.debug("reconnect(): Reconnecting")
+        async with self._reconnect_lock:
+            if self.ws and not self.ws.closed and not force:
+                _LOGGER.debug("reconnect(): Already reconnected")
+                return
+            future = asyncio.get_event_loop().create_future()
+            callback = lambda: (future.set_result(True))
+    
+            await self._connect(callback)
+            await asyncio.wait_for(future, timeout=60)
+    
+            for device_id, callback in self.device_update_callbacks.copy().items():
+                await self.subscribe_device(device_id, callback)
 
     async def _connect(self, callback: Optional[Callable[[], Union[Awaitable[None], None]]]):
         """Initiate connection"""
@@ -201,6 +206,16 @@ class HWSocket:
                 asyncio.create_task(self.reconnect())
 
     async def send(self, msg_type: str, payload: dict):
+        for attempt in range(3):
+            try:
+                if self.ws is None or self.ws.closed:
+                    await self.reconnect(False)
+            except (AttributeError,
+                    websockets.exceptions.ConnectionClosed):
+                if attempt == retries - 1:
+                    raise
+                await asyncio.sleep(2 ** attempt)
+    
         message_id = self.message_id
         self.message_id += 1
 
