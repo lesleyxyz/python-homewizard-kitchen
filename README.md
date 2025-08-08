@@ -6,7 +6,7 @@ Tested on a HomeWizard Kettle 1.4,HWK-KTL 1.07
 Want to integrate this into HomeAssistant? Checkout the [HomeAssistant HACS Integration](https://github.com/lesleyxyz/hass-homewizard-kettle/)
 
 ## Installation
-```
+```bash
 pip install homewizard-kitchen
 ```
 
@@ -14,3 +14,10 @@ pip install homewizard-kitchen
 See [example.py](https://github.com/lesleyxyz/python-homewizard-kitchen/blob/main/example.py)
 
 Afterwards you can use the Kettle model to update & retrieve data.
+
+## Building
+```bash
+pip install build twine
+python -m build
+twine upload dist/*
+```

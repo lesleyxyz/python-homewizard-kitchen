@@ -1,7 +1,6 @@
 from typing import Union, Callable, Awaitable, Optional
 from jsonpatch import JsonPatch
 import urllib.parse
-import requests
 import hashlib
 import base64
 import websockets
@@ -150,10 +149,13 @@ class HWSocket:
             self._receive_messages()
         )
 
+    def is_ws_closed(self) -> bool:
+        return self.ws is None and not self.ws.closed_event.is_set()
+
     async def reconnect(self, force=True):
         _LOGGER.debug("reconnect(): Reconnecting")
         async with self._reconnect_lock:
-            if self.ws and not self.ws.closed and not force:
+            if not self.is_ws_closed() and not force:
                 _LOGGER.debug("reconnect(): Already reconnected")
                 return
             future = asyncio.get_event_loop().create_future()
@@ -208,7 +210,7 @@ class HWSocket:
     async def send(self, msg_type: str, payload: dict, retries: int = 3):
         for attempt in range(retries):
             try:
-                if self.ws is None or self.ws.closed:
+                if self.is_ws_closed():
                     await self.reconnect(False)
                 # build + send in the same try, so AttributeError is caught
                 message_id = self.message_id
