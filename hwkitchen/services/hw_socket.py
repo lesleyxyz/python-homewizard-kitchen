@@ -160,25 +160,31 @@ class HWSocket:
     async def reconnect(self, force=True):
         _LOGGER.debug("reconnect(): Reconnecting")
         async with self._reconnect_lock:
+            _LOGGER.debug("reconnect(): Acquired lock")
             if not self.is_ws_closed() and not force:
                 _LOGGER.debug("reconnect(): Already reconnected")
                 return
+
+            _LOGGER.debug("reconnect(): Creating future for reconnection")
             future = asyncio.get_event_loop().create_future()
             callback = lambda: (future.set_result(True))
     
+            _LOGGER.debug("reconnect(): Calling _connect()")
             await self._connect(callback)
             await asyncio.wait_for(future, timeout=60)
     
             for device_id, callback in self.device_update_callbacks.copy().items():
                 await self.subscribe_device(device_id, callback)
 
+        _LOGGER.debug("reconnect(): Released lock")
+
     async def _connect(self, callback: Optional[Callable[[], Union[Awaitable[None], None]]]):
         """Initiate connection"""
-        _LOGGER.debug("Connecting")
+        _LOGGER.debug("_connect(): Connecting")
         self.message_id = 1
         self.message_id_futures = {}
         self.ws = await websockets.connect("wss://app-ws.homewizard.com/ws")
-        _LOGGER.debug("Connected")
+        _LOGGER.debug("_connect(): Connected")
 
         await self.send("hello", {
             "type": "hello",
@@ -192,9 +198,13 @@ class HWSocket:
         if not callback:
             return
         elif inspect.iscoroutinefunction(callback):
+            _LOGGER.debug("_connect(): await callback() called")
             await callback()
+            _LOGGER.debug("_connect(): await callback() completed")
         else:
+            _LOGGER.debug("_connect(): callback() called")
             callback()
+            _LOGGER.debug("_connect(): callback() completed")
 
     async def _receive_messages(self):
         """
