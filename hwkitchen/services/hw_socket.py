@@ -150,7 +150,12 @@ class HWSocket:
         )
 
     def is_ws_closed(self) -> bool:
-        return self.ws is None and not self.ws.closed_event.is_set()
+        _LOGGER.debug(f"is_ws_closed(): self.ws is None: {self.ws is None}, state: {getattr(self.ws, 'state', 'N/A')}")
+        return (
+            self.ws is None or
+            self.ws.state == websockets.State.CLOSED or
+            self.ws.state == websockets.State.CLOSING
+        )
 
     async def reconnect(self, force=True):
         _LOGGER.debug("reconnect(): Reconnecting")
